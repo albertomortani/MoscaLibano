@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mosca 3D - Missione Libano</title>
+    <!-- Tailwind CSS per una UI moderna e responsiva -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js per la grafica 3D immersiva -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- FontAwesome per le icone di gioco -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            user-select: none;
+            background-color: #050505;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Effetto visivo occhi composti della mosca (griglia esagonale procedurale) */
+        #compound-eye-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.35;
+            background-size: 16px 28px;
+            background-image: 
+                radial-gradient(circle at 50% 0%, transparent 45%, rgba(0,0,0,0.6) 50%, transparent 55%),
+                radial-gradient(circle at 0% 50%, transparent 45%, rgba(0,0,0,0.6) 50%, transparent 55%),
+                radial-gradient(circle at 100% 50%, transparent 45%, rgba(0,0,0,0.6) 50%, transparent 55%),
+                radial-gradient(circle at 50% 100%, transparent 45%, rgba(0,0,0,0.6) 50%, transparent 55%);
+            background-color: rgba(150, 220, 50, 0.08); /* Tonalità di visione insettoide */
+        }
+
+        /* Filtro di visione della mosca (distorsione sferica fittizia, saturazione e contrasto alti) */
+        #game-container {
+            width: 100%;
+            height: 100%;
+            filter: contrast(1.25) saturate(1.85) hue-rotate(30deg) sepia(0.15);
+            transition: filter 0.1s ease-out;
+        }
+
+        /* Mirino insettoide centrale */
+        .reticle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        /* Touch target ottimizzati per i comandi mobile */
+        .touch-button {
+            touch-action: none;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Overlay Occhi da Mosca -->
+    <div id="compound-eye-overlay"></div>
+
+    <!-- Mirino a retina di mosca -->
+    <div class="reticle">
+        <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="opacity-80 animate-pulse">
+            <circle cx="50" cy="50" r="40" stroke="#a3e635" stroke-width="4" stroke-dasharray="8 8" />
+            <circle cx="50" cy="50" r="12" stroke="#a3e635" stroke-width="2" />
+            <path d="M 50 0 L 50 25 M 50 75 L 50 100 M 0 50 L 25 50 M 75 50 L 100 50" stroke="#a3e635" stroke-width="4" />
+        </svg>
+    </div>
+
+    <!-- Schermata di Avvio / Istruzioni -->
+    <div id="start-screen" class="absolute inset-0 bg-black/90 z-50 flex flex-col items-center justify-center text-white px-4">
+        <div class="max-w-md w-full bg-neutral-900 border-2 border-lime-500 rounded-2xl p-6 shadow-2xl text-center space-y-6">
+            <div class="flex justify-center text-lime-400">
+                <i class="fa-solid fa-bug text-7xl animate-bounce"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold tracking-wider text-lime-400 uppercase">Fly Strike: Libano 3D</h1>
+            <p class="text-neutral-300 text-sm leading-relaxed">
+                Sei una super-mosca geneticamente modificata dotata di armi chimiche acide. Sorvola le antiche rovine del Libano e neutralizza i bizzarri banditi che corrono nudi (in mutande!) prima che il tempo finisca!
+            </p>
+            
+            <div class="bg-neutral-800/80 p-4 rounded-xl text-left text-xs space-y-2.5 text-neutral-300 border border-neutral-700">
+                <p class="font-bold text-lime-400 border-b border-neutral-700 pb-1.5 uppercase mb-2 flex items-center gap-1">
+                    <i class="fa-solid fa-gamepad"></i> Controlli di Gioco
+                </p>
+                <p><span class="bg-neutral-700 px-1.5 py-0.5 rounded text-white font-mono font-bold mr-1">Mouse</span> Ruota la visuale (Fai clic per bloccare il cursore)</p>
+                <p><span class="bg-neutral-700 px-1.5 py-0.5 rounded text-white font-mono font-bold mr-1">W / A / S / D</span> Vola in Avanti / Sinistra / Indietro / Destra</p>
+                <p><span class="bg-neutral-700 px-1.5 py-0.5 rounded text-white font-mono font-bold mr-1">Spazio / Click</span> Spara Acido di Mosca</p>
+                <p><span class="bg-neutral-700 px-1.5 py-0.5 rounded text-white font-mono font-bold mr-1">Shift / C</span> Sali di quota / Scendi di quota</p>
+            </div>
+
+            <button id="btn-start" class="w-full bg-lime-500 hover:bg-lime-400 text-black font-extrabold py-3.5 px-6 rounded-xl text-lg uppercase tracking-wide transition duration-300 flex items-center justify-center gap-2 shadow-lg shadow-lime-500/25">
+                <i class="fa-solid fa-play"></i> Decolla Ora!
+            </button>
+        </div>
+    </div>
+
+    <!-- HUD (Interfaccia di Volo) -->
+    <div id="hud" class="absolute top-0 left-0 w-full p-4 z-30 pointer-events-none flex justify-between items-start text-white font-mono">
+        <!-- Punteggio e Tempo -->
+        <div class="bg-black/70 border border-lime-500/30 p-3.5 rounded-xl flex gap-6 backdrop-blur-md shadow-lg">
+            <div>
+                <div class="text-[10px] text-neutral-400 uppercase">Punti accumulati</div>
+                <div class="text-2xl font-black text-lime-400" id="score-display">0000</div>
+            </div>
+            <div class="border-l border-neutral-800 pl-6">
+                <div class="text-[10px] text-neutral-400 uppercase">Tempo di Volo</div>
+                <div class="text-2xl font-black text-red-500" id="time-display">60s</div>
+            </div>
+        </div>
+
+        <!-- Radar / Scanner Nemici -->
+        <div class="bg-black/70 border border-lime-500/30 p-2.5 rounded-xl backdrop-blur-md shadow-lg flex flex-col items-center">
+            <span class="text-[10px] text-lime-400 uppercase font-bold mb-1.5 tracking-wider"><i class="fa-solid fa-radar mr-1"></i>Scanner Insetti</span>
+            <div id="radar" class="w-24 h-24 rounded-full border border-lime-500/50 relative overflow-hidden bg-lime-950/20">
+                <!-- Centro (Posizione Mosca) -->
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-lime-400 shadow-[0_0_8px_#a3e635]"></div>
+                <!-- Linea rotante del radar -->
+                <div class="absolute w-12 h-0.5 bg-lime-500/50 origin-left top-1/2 left-1/2 animate-[spin_2s_linear_infinite]"></div>
+                <!-- Contenitore dinamico dei puntini nemici -->
+                <div id="radar-dots" class="absolute inset-0"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schermata Game Over / Risultati -->
+    <div id="gameover-screen" class="absolute inset-0 bg-black/95 z-50 flex flex-col items-center justify-center text-white px-4 hidden">
+        <div class="max-w-md w-full bg-neutral-900 border-2 border-red-500 rounded-2xl p-8 shadow-2xl text-center space-y-6">
+            <div class="flex justify-center text-red-500">
+                <i class="fa-solid fa-skull-crossbones text-7xl animate-pulse"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold tracking-wider text-red-500 uppercase">Ricarica Energia!</h1>
+            <p class="text-neutral-300">
+                La tua mosca ha esaurito l'autonomia di volo sopra la valle del Libano. Riprova per stabilire un nuovo record di disinfestazione!
+            </p>
+            
+            <div class="bg-neutral-800 p-4 rounded-xl flex justify-around border border-neutral-700">
+                <div>
+                    <span class="text-xs text-neutral-400 block uppercase">Banditi Eliminati</span>
+                    <span class="text-3xl font-black text-lime-400" id="final-score">0</span>
+                </div>
+            </div>
+
+            <button id="btn-restart" class="w-full bg-red-500 hover:bg-red-400 text-black font-extrabold py-3.5 px-6 rounded-xl text-lg uppercase tracking-wide transition duration-300 shadow-lg shadow-red-500/25">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Riprova Volo
+            </button>
+        </div>
+    </div>
+
+    <!-- Controlli Mobile (Visibili solo su schermi Touch) -->
+    <div id="mobile-controls" class="absolute bottom-6 left-0 w-full px-6 z-30 flex justify-between items-end pointer-events-none hidden">
+        <!-- Joystick Analogico sinistro -->
+        <div class="w-32 h-32 bg-white/10 border-2 border-white/20 rounded-full relative pointer-events-auto touch-button flex items-center justify-center" id="touch-joystick">
+            <div class="w-12 h-12 bg-lime-500 rounded-full absolute shadow-lg shadow-lime-500/50" id="touch-knob"></div>
+        </div>
+        <!-- Pulsantiera di destra per volo verticale e sparo -->
+        <div class="flex flex-col gap-3.5 pointer-events-auto">
+            <div class="flex gap-3">
+                <button id="btn-touch-up" class="w-14 h-14 bg-neutral-800/90 active:bg-lime-500 text-white active:text-black rounded-full flex items-center justify-center text-xl touch-button border border-white/10 shadow-lg">
+                    <i class="fa-solid fa-chevron-up"></i>
+                </button>
+                <button id="btn-touch-down" class="w-14 h-14 bg-neutral-800/90 active:bg-lime-500 text-white active:text-black rounded-full flex items-center justify-center text-xl touch-button border border-white/10 shadow-lg">
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+            </div>
+            <button id="btn-touch-fire" class="w-20 h-20 bg-lime-500 active:bg-lime-400 text-black rounded-full flex items-center justify-center text-3xl font-bold touch-button shadow-2xl border-4 border-lime-300">
+                <i class="fa-solid fa-spray-can"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Container del Canvas di Three.js -->
+    <div id="game-container"></div>
+
+    <script>
+        // Rilevamento dispositivi mobili
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+            document.getElementById('mobile-controls').classList.remove('hidden');
+        }
+
+        // --- STATO DEL GIOCO ---
+        let gameActive = false;
+        let score = 0;
+        let timeLeft = 60;
+        let gameTimer = null;
+
+        // --- FISICA DI MOVIMENTO E STATO TASTI ---
+        const keys = { w: false, a: false, s: false, d: false, space: false, shift: false, c: false };
+        const cameraRotation = { yaw: 0, pitch: 0 };
+        
+        // Configurazione Joystick Virtuale
+        let touchStartPos = { x: 0, y: 0 };
+        let touchMoveDir = { x: 0, y: 0 };
+        let isJoystickActive = false;
+
+        // --- MOTORE AUDIO IN REAL-TIME (Sintesi procedurale Web Audio API) ---
+        let audioCtx = null;
+        let buzzOscillator = null;
+        let buzzGain = null;
+
+        // Inizializza il ronzio continuo delle ali della mosca
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            buzzOscillator = audioCtx.createOscillator();
+            buzzGain = audioCtx.createGain();
+            
+            // Onda dente di sega per un ronzio realistico e sporco
+            buzzOscillator.type = 'sawtooth';
+            buzzOscillator.frequency.value = 135; // Frequenza base ronzio mosca (Hz)
+            
+            // Lowpass filter per addolcire il ronzio ad alta frequenza
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 750;
+
+            buzzOscillator.connect(filter);
+            filter.connect(buzzGain);
+            buzzGain.connect(audioCtx.destination);
+            
+            buzzGain.gain.value = 0.08;
+            buzzOscillator.start();
+        }
+
+        // Modula l'intensità e l'altezza del ronzio in base alle manovre di volo
+        function updateBuzzAudio(speedRatio) {
+            if (!buzzOscillator) return;
+            buzzOscillator.frequency.setTargetAtTime(135 + (speedRatio * 125), audioCtx.currentTime, 0.1);
+            buzzGain.gain.setTargetAtTime(0.08 + (speedRatio * 0.15), audioCtx.currentTime, 0.1);
+        }
+
+        // Effetto sonoro del getto acido
+        function playShootSound() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(380, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.18);
+            gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.18);
+        }
+
+        // Effetto sonoro quando colpisci un nemico nudo
+        function playHitSound() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(380, audioCtx.currentTime + 0.22);
+            gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.22);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.22);
+        }
+
+        // --- ENGINE DI GIOCO 3D (THREE.JS) ---
+        let scene, camera, renderer;
+        let ground, environmentGroup;
+        const enemies = [];
+        const projectiles = [];
+        const particles = [];
+        const arenaSize = 250; // Dimensione mappa quadrata
+
+        function init3D() {
+            const container = document.getElementById('game-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xd9b38c); // Cielo caldo e sabbioso del Libano
+            scene.fog = new THREE.FogExp2(0xd9b38c, 0.0075);
+
+            // Telecamera posizionata sugli occhi della mosca
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 10, 0);
+
+            // WebGL Renderer ottimizzato
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            // Illuminazione solare intensa
+            const ambientLight = new THREE.AmbientLight(0xfff0e0, 0.55);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1.25);
+            sunLight.position.set(120, 160, 60);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 1024;
+            sunLight.shadow.mapSize.height = 1024;
+            scene.add(sunLight);
+
+            // Generazione procedurale di terreno, rovine e palme libanesi
+            createTerrain();
+            
+            environmentGroup = new THREE.Group();
+            createRuins();
+            createPalms();
+            scene.add(environmentGroup);
+
+            // Spawn dei banditi comici
+            spawnEnemies(18);
+
+            // Gestione del resizing dello schermo
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // Genera il terreno collinare con variazioni di altezza matematiche
+        function createTerrain() {
+            const groundGeo = new THREE.PlaneGeometry(arenaSize * 2, arenaSize * 2, 64, 64);
+            const pos = groundGeo.attributes.position;
+            
+            for (let i = 0; i < pos.count; i++) {
+                const vx = pos.getX(i);
+                const vy = pos.getY(i);
+                // Onde incrociate per colline e dune organiche
+                const z = Math.sin(vx * 0.02) * Math.cos(vy * 0.02) * 8 + Math.cos(vx * 0.005) * 5;
+                pos.setZ(i, z);
+            }
+            groundGeo.computeVertexNormals();
+
+            const groundMat = new THREE.MeshStandardMaterial({
+                color: 0xc69c6d, // Dorato sabbia calda
+                roughness: 0.95,
+                metalness: 0.05,
+                flatShading: true
+            });
+
+            ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+        }
+
+        // Genera resti archeologici storici (Baalbek) in 3D
+        function createRuins() {
+            const numRuins = 25;
+            const columnGeo = new THREE.CylinderGeometry(1.1, 1.4, 18, 8);
+            const capGeo = new THREE.BoxGeometry(3.8, 1.4, 3.8);
+            const wallGeo = new THREE.BoxGeometry(16, 8, 3.5);
+            const stoneMat = new THREE.MeshStandardMaterial({ color: 0xcca885, roughness: 0.85 });
+
+            for (let i = 0; i < numRuins; i++) {
+                const rx = (Math.random() - 0.5) * (arenaSize * 1.5);
+                const rz = (Math.random() - 0.5) * (arenaSize * 1.5);
+                
+                if (Math.sqrt(rx*rx + rz*rz) < 25) continue; // Non ostacolare l'area di decollo iniziale
+
+                const ruinY = getTerrainHeight(rx, rz);
+                const structure = new THREE.Group();
+                structure.position.set(rx, ruinY, rz);
+
+                const layout = Math.random() > 0.45 ? 'colonne' : 'muro';
+
+                if (layout === 'colonne') {
+                    for (let c = -1; c <= 1; c++) {
+                        const col = new THREE.Mesh(columnGeo, stoneMat);
+                        col.position.set(c * 6.5, 9, 0);
+                        col.castShadow = true;
+                        col.receiveShadow = true;
+                        structure.add(col);
+
+                        const cap = new THREE.Mesh(capGeo, stoneMat);
+                        cap.position.set(c * 6.5, 18, 0);
+                        cap.castShadow = true;
+                        structure.add(cap);
+                    }
+                    const beamGeo = new THREE.BoxGeometry(19, 1.4, 3);
+                    const beam = new THREE.Mesh(beamGeo, stoneMat);
+                    beam.position.set(0, 19, 0);
+                    beam.castShadow = true;
+                    structure.add(beam);
+                } else {
+                    const wall = new THREE.Mesh(wallGeo, stoneMat);
+                    wall.position.set(0, 4, 0);
+                    wall.rotation.y = Math.random() * Math.PI;
+                    wall.castShadow = true;
+                    wall.receiveShadow = true;
+                    structure.add(wall);
+                }
+
+                environmentGroup.add(structure);
+            }
+        }
+
+        // Popola l'oasi con palme
+        function createPalms() {
+            const numPalms = 40;
+            const trunkGeo = new THREE.CylinderGeometry(0.25, 0.7, 12, 6);
+            const leafGeo = new THREE.BoxGeometry(5.5, 0.1, 1.4);
+            const woodMat = new THREE.MeshStandardMaterial({ color: 0x805333, roughness: 0.9 });
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x477a1e, roughness: 0.85 });
+
+            for (let i = 0; i < numPalms; i++) {
+                const px = (Math.random() - 0.5) * (arenaSize * 1.6);
+                const pz = (Math.random() - 0.5) * (arenaSize * 1.6);
+                const py = getTerrainHeight(px, pz);
+
+                const palm = new THREE.Group();
+                palm.position.set(px, py, pz);
+
+                const trunk = new THREE.Mesh(trunkGeo, woodMat);
+                trunk.position.y = 6;
+                trunk.rotation.z = (Math.random() - 0.5) * 0.25;
+                trunk.rotation.x = (Math.random() - 0.5) * 0.25;
+                trunk.castShadow = true;
+                palm.add(trunk);
+
+                for (let l = 0; l < 8; l++) {
+                    const leaf = new THREE.Mesh(leafGeo, leafMat);
+                    leaf.position.set(0, 11.8, 0);
+                    leaf.rotation.y = (l * Math.PI) / 4;
+                    leaf.rotation.x = 0.35;
+                    leaf.castShadow = true;
+                    palm.add(leaf);
+                }
+
+                environmentGroup.add(palm);
+            }
+        }
+
+        // Calcola l'esatta coordinata verticale sul terreno deformato
+        function getTerrainHeight(x, z) {
+            if (!ground) return 0;
+            return Math.sin(x * 0.02) * Math.cos(z * 0.02) * 8 + Math.cos(x * 0.005) * 5;
+        }
+
+        // --- SPAWN E CREAZIONE NEMICI (Banditi in boxer spiritosi) ---
+        function spawnEnemies(count) {
+            for (let i = 0; i < count; i++) {
+                createSingleEnemy();
+            }
+        }
+
+        function createSingleEnemy() {
+            const enemy = new THREE.Group();
+            
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xdfa57d, roughness: 0.65 });
+            const underwearMat = new THREE.MeshStandardMaterial({ color: 0xfbfbfb, roughness: 0.55 });
+            const turbanMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85 });
+            const beardMat = new THREE.MeshStandardMaterial({ color: 0x0c0c0c, roughness: 0.9 });
+
+            // Testa
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.75, 8, 8), skinMat);
+            head.position.y = 3.3;
+            enemy.add(head);
+
+            // Turbante comico
+            const turban = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.45, 8), turbanMat);
+            turban.position.set(0, 3.75, 0);
+            turban.rotation.x = 0.08;
+            enemy.add(turban);
+
+            // Barba folta stilizzata
+            const beard = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.8, 0.55), beardMat);
+            beard.position.set(0, 3.05, 0.35);
+            enemy.add(beard);
+
+            // Torso muscoloso
+            const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 1.4, 8), skinMat);
+            torso.position.y = 2.1;
+            torso.castShadow = true;
+            enemy.add(torso);
+
+            // Boxer buffi
+            const boxer = new THREE.Mesh(new THREE.CylinderGeometry(0.78, 0.78, 0.65, 8), underwearMat);
+            boxer.position.y = 1.25;
+            boxer.castShadow = true;
+            enemy.add(boxer);
+
+            // Cuoricini rossi tridimensionali sui boxer bianchi
+            const heartGeo = new THREE.BoxGeometry(0.14, 0.14, 0.06);
+            const heartMat = new THREE.MeshStandardMaterial({ color: 0xe11d48, roughness: 0.3 });
+            for (let h = 0; h < 4; h++) {
+                const heart = new THREE.Mesh(heartGeo, heartMat);
+                const angle = (h * Math.PI) / 2;
+                heart.position.set(Math.cos(angle) * 0.8, 1.25, Math.sin(angle) * 0.8);
+                heart.rotation.y = -angle + Math.PI / 2;
+                enemy.add(heart);
+            }
+
+            // Gambe per l'animazione della corsa
+            const legGeo = new THREE.CylinderGeometry(0.24, 0.24, 1.0, 6);
+            
+            const leftLeg = new THREE.Mesh(legGeo, skinMat);
+            leftLeg.position.set(-0.32, 0.5, 0);
+            leftLeg.castShadow = true;
+            enemy.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeo, skinMat);
+            rightLeg.position.set(0.32, 0.5, 0);
+            rightLeg.castShadow = true;
+            enemy.add(rightLeg);
+
+            // Posiziona il nemico in modo casuale nell'arena evitando la mosca
+            let rx, rz, dist;
+            do {
+                rx = (Math.random() - 0.5) * (arenaSize * 1.5);
+                rz = (Math.random() - 0.5) * (arenaSize * 1.5);
+                dist = Math.sqrt(rx*rx + rz*rz);
+            } while (dist < 35);
+
+            const ry = getTerrainHeight(rx, rz);
+            enemy.position.set(rx, ry, rz);
+
+            enemy.userData = {
+                speed: 0.12 + Math.random() * 0.14,
+                direction: Math.random() * Math.PI * 2,
+                changeDirTimer: 0,
+                animTime: Math.random() * 100,
+                isDying: false,
+                dyingForce: new THREE.Vector3()
+            };
+
+            scene.add(enemy);
+            enemies.push(enemy);
+        }
+
+        // --- MOVIMENTO IA E ANIMAZIONE RUNNING ---
+        function updateEnemies(delta) {
+            enemies.forEach((enemy, index) => {
+                const data = enemy.userData;
+
+                if (data.isDying) {
+                    // Ragdoll comico: schizza via ruotando nello spazio
+                    enemy.position.addScaledVector(data.dyingForce, delta * 32);
+                    enemy.rotation.x += 0.25;
+                    enemy.rotation.y += 0.35;
+                    data.dyingForce.y -= 9.8 * delta; // Gravità del proiettile
+
+                    if (enemy.position.y < -12) {
+                        scene.remove(enemy);
+                        enemies.splice(index, 1);
+                        createSingleEnemy(); // Rifornimento infinito di bersagli
+                    }
+                    return;
+                }
+
+                // AI di pattugliamento casuale
+                data.changeDirTimer -= delta;
+                if (data.changeDirTimer <= 0) {
+                    data.direction = Math.random() * Math.PI * 2;
+                    data.changeDirTimer = 1.5 + Math.random() * 3.5;
+                }
+
+                const stepX = Math.sin(data.direction) * data.speed;
+                const stepZ = Math.cos(data.direction) * data.speed;
+                let nextX = enemy.position.x + stepX;
+                let nextZ = enemy.position.z + stepZ;
+
+                // Rimbalzo dai confini invisibili della mappa
+                if (Math.abs(nextX) > arenaSize) data.direction = Math.PI - data.direction;
+                if (Math.abs(nextZ) > arenaSize) data.direction = -data.direction;
+
+                enemy.position.x = THREE.MathUtils.clamp(nextX, -arenaSize, arenaSize);
+                enemy.position.z = THREE.MathUtils.clamp(nextZ, -arenaSize, arenaSize);
+                enemy.position.y = getTerrainHeight(enemy.position.x, enemy.position.z);
+                
+                enemy.rotation.y = data.direction;
+
+                // Animazione di oscillazione ritmica delle gambe
+                data.animTime += delta * 18;
+                const legsSwing = Math.sin(data.animTime) * 0.45;
+                
+                enemy.children.forEach(child => {
+                    if (child.position.x === -0.32 && child.position.y === 0.5) {
+                        child.rotation.x = legsSwing;
+                    }
+                    if (child.position.x === 0.32 && child.position.y === 0.5) {
+                        child.rotation.x = -legsSwing;
+                    }
+                });
+            });
+        }
+
+        // --- MECCANICA DI TIRO (Sputo Acido di Mosca) ---
+        function fireProjectile() {
+            if (!gameActive) return;
+
+            playShootSound();
+
+            const projGeo = new THREE.SphereGeometry(0.38, 6, 6);
+            const projMat = new THREE.MeshBasicMaterial({ color: 0x4d7c0f }); // Verde acido brillante
+            const proj = new THREE.Mesh(projGeo, projMat);
+
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            proj.position.copy(camera.position).addScaledVector(dir, 1.4);
+            
+            proj.userData = {
+                velocity: dir.multiplyScalar(98), // Alta velocità balistica
+                life: 2.8
+            };
+
+            scene.add(proj);
+            projectiles.push(proj);
+
+            // Flash visivo acido dell'overlay della mosca
+            const overlay = document.getElementById('compound-eye-overlay');
+            overlay.style.backgroundColor = 'rgba(101, 163, 13, 0.35)';
+            setTimeout(() => {
+                if (gameActive) overlay.style.backgroundColor = 'rgba(150, 220, 50, 0.08)';
+            }, 70);
+        }
+
+        function updateProjectiles(delta) {
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const proj = projectiles[i];
+                proj.position.addScaledVector(proj.userData.velocity, delta);
+                proj.userData.life -= delta;
+
+                // Rileva l'altezza del terreno sotto il colpo
+                const currentGroundY = getTerrainHeight(proj.position.x, proj.position.z);
+                if (proj.position.y <= currentGroundY) {
+                    createAcidSplat(proj.position, 0x4d7c0f);
+                    scene.remove(proj);
+                    projectiles.splice(i, 1);
+                    continue;
+                }
+
+                // Controllo collisione sferica tra getto e banditi nudi
+                let hitEnemy = false;
+                for (let j = 0; j < enemies.length; j++) {
+                    const enemy = enemies[j];
+                    if (enemy.userData.isDying) continue;
+
+                    const enemyBoxCenter = enemy.position.clone().add(new THREE.Vector3(0, 1.8, 0));
+                    const dist = proj.position.distanceTo(enemyBoxCenter);
+
+                    if (dist < 2.3) {
+                        hitEnemy = true;
+                        triggerEnemyDeath(enemy, proj.userData.velocity.clone().normalize());
+                        createAcidSplat(proj.position, 0xd9f99d); // Splash corrosivo chiaro
+                        break;
+                    }
+                }
+
+                if (hitEnemy || proj.userData.life <= 0) {
+                    if (!hitEnemy) createAcidSplat(proj.position, 0x4d7c0f);
+                    scene.remove(proj);
+                    projectiles.splice(i, 1);
+                }
+            }
+        }
+
+        function triggerEnemyDeath(enemy, hitDirection) {
+            enemy.userData.isDying = true;
+            // Spinta vettoriale comica all'indietro e verso l'alto
+            enemy.userData.dyingForce.copy(hitDirection).multiplyScalar(2.2).setY(1.6);
+            
+            playHitSound();
+            
+            score += 100;
+            document.getElementById('score-display').innerText = String(score).padStart(4, '0');
+        }
+
+        // --- SISTEMA PARTICELLARE DELLO SPLASH ACIDO ---
+        function createAcidSplat(position, colorHex) {
+            const pCount = 10;
+            const geom = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+            const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+
+            for (let i = 0; i < pCount; i++) {
+                const particle = new THREE.Mesh(geom, mat);
+                particle.position.copy(position);
+                
+                particle.userData = {
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 14,
+                        (Math.random() * 10) + 2,
+                        (Math.random() - 0.5) * 14
+                    ),
+                    life: 0.55
+                };
+
+                scene.add(particle);
+                particles.push(particle);
+            }
+        }
+
+        function updateParticles(delta) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.position.addScaledVector(p.userData.velocity, delta);
+                p.userData.velocity.y -= 9.8 * 2.5 * delta; // Gravità amplificata per le particelle
+                p.userData.life -= delta;
+
+                if (p.userData.life <= 0) {
+                    scene.remove(p);
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // --- LOGICA DEL RADAR DI VOLO ---
+        function updateRadar() {
+            const dotsContainer = document.getElementById('radar-dots');
+            dotsContainer.innerHTML = '';
+
+            const radarRadius = 48; // Metà della grandezza del radar container (px)
+
+            enemies.forEach(enemy => {
+                if (enemy.userData.isDying) return;
+
+                const dx = enemy.position.x - camera.position.x;
+                const dz = enemy.position.z - camera.position.z;
+                
+                // Rotazione relativa all'inclinazione yaw della mosca
+                const angle = -cameraRotation.yaw;
+                const rx = dx * Math.cos(angle) - dz * Math.sin(angle);
+                const rz = dx * Math.sin(angle) + dz * Math.cos(angle);
+
+                const scanRange = 130; // Distanza massima scannerizzata dal radar
+                const scale = radarRadius / scanRange;
+                const posX = rx * scale;
+                const posY = rz * scale;
+
+                if (rx*rx + rz*rz < scanRange*scanRange) {
+                    const dot = document.createElement('div');
+                    dot.className = 'absolute w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_6px_#ef4444]';
+                    dot.style.left = `${radarRadius + posX - 3}px`;
+                    dot.style.top = `${radarRadius + posY - 3}px`;
+                    dotsContainer.appendChild(dot);
+                }
+            });
+        }
+
+        // --- SISTEMA DI CONTROLLO VOLO E LOCK DEL MOUSE (FPS) ---
+        const container = document.getElementById('game-container');
+        container.addEventListener('click', () => {
+            if (gameActive && !isMobile) {
+                container.requestPointerLock();
+            }
+        });
+
+        // Gestione movimento dello sguardo (rotazione camera)
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement !== container && gameActive && !isMobile) return;
+            
+            const sensitivity = 0.0022;
+            cameraRotation.yaw -= e.movementX * sensitivity;
+            cameraRotation.pitch -= e.movementY * sensitivity;
+
+            // Evita ribaltamento di testa
+            cameraRotation.pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraRotation.pitch));
+        });
+
+        // Click del mouse per sparare su Desktop
+        document.addEventListener('mousedown', (e) => {
+            if (document.pointerLockElement === container && gameActive && !isMobile) {
+                if (e.button === 0) fireProjectile();
+            }
+        });
+
+        // Key Down / Key Up
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w' || key === 'arrowup') keys.w = true;
+            if (key === 'a' || key === 'arrowleft') keys.a = true;
+            if (key === 's' || key === 'arrowdown') keys.s = true;
+            if (key === 'd' || key === 'arrowright') keys.d = true;
+            if (key === ' ') {
+                e.preventDefault();
+                if (!keys.space) fireProjectile();
+                keys.space = true;
+            }
+            if (e.key === 'Shift') keys.shift = true;
+            if (key === 'c') keys.c = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w' || key === 'arrowup') keys.w = false;
+            if (key === 'a' || key === 'arrowleft') keys.a = false;
+            if (key === 's' || key === 'arrowdown') keys.s = false;
+            if (key === 'd' || key === 'arrowright') keys.d = false;
+            if (key === ' ') keys.space = false;
+            if (e.key === 'Shift') keys.shift = false;
+            if (key === 'c') keys.c = false;
+        });
+
+        // --- JOYSTICK VIRTUALE PER DISPOSITIVI MOBILI ---
+        const joystick = document.getElementById('touch-joystick');
+        const knob = document.getElementById('touch-knob');
+
+        joystick.addEventListener('touchstart', (e) => {
+            isJoystickActive = true;
+            const touch = e.touches[0];
+            const rect = joystick.getBoundingClientRect();
+            touchStartPos.x = rect.left + rect.width / 2;
+            touchStartPos.y = rect.top + rect.height / 2;
+        });
+
+        joystick.addEventListener('touchmove', (e) => {
+            if (!isJoystickActive) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            
+            let dx = touch.clientX - touchStartPos.x;
+            let dy = touch.clientY - touchStartPos.y;
+            const distance = Math.sqrt(dx*dx + dy*dy);
+            const maxRadius = 45;
+
+            if (distance > maxRadius) {
+                dx = (dx / distance) * maxRadius;
+                dy = (dy / distance) * maxRadius;
+            }
+
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+            
+            touchMoveDir.x = dx / maxRadius;
+            touchMoveDir.y = dy / maxRadius;
+        });
+
+        joystick.addEventListener('touchend', () => {
+            isJoystickActive = false;
+            knob.style.transform = 'translate(0px, 0px)';
+            touchMoveDir.x = 0;
+            touchMoveDir.y = 0;
+        });
+
+        // Eventi touch dei pulsanti sparo e altezza
+        const btnTouchFire = document.getElementById('btn-touch-fire');
+        btnTouchFire.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            fireProjectile();
+        });
+
+        const btnTouchUp = document.getElementById('btn-touch-up');
+        btnTouchUp.addEventListener('touchstart', (e) => { e.preventDefault(); keys.shift = true; });
+        btnTouchUp.addEventListener('touchend', () => { keys.shift = false; });
+
+        const btnTouchDown = document.getElementById('btn-touch-down');
+        btnTouchDown.addEventListener('touchstart', (e) => { e.preventDefault(); keys.c = true; });
+        btnTouchDown.addEventListener('touchend', () => { keys.c = false; });
+
+        // --- GESTIONE FISICA DEL VOLO ---
+        function updateFlight(delta) {
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            euler.x = cameraRotation.pitch;
+            euler.y = cameraRotation.yaw;
+            camera.quaternion.setFromEuler(euler);
+
+            const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            const up = new THREE.Vector3(0, 1, 0);
+
+            const flightSpeed = 44;
+            const moveDirection = new THREE.Vector3();
+
+            // Calcolo vettoriale di spostamento da tastiera
+            if (keys.w) moveDirection.add(forward);
+            if (keys.s) moveDirection.add(forward.clone().negate());
+            if (keys.a) moveDirection.add(right.clone().negate());
+            if (keys.d) moveDirection.add(right);
+            
+            if (keys.shift) moveDirection.add(up);
+            if (keys.c) moveDirection.add(up.clone().negate());
+
+            // Supporto joystick mobile
+            if (isJoystickActive) {
+                moveDirection.addScaledVector(forward, -touchMoveDir.y);
+                moveDirection.addScaledVector(right, touchMoveDir.x);
+            }
+
+            if (moveDirection.lengthSq() > 0) {
+                moveDirection.normalize();
+                camera.position.addScaledVector(moveDirection, flightSpeed * delta);
+                updateBuzzAudio(1.0); // Frequenza ronzio alta in movimento
+            } else {
+                updateBuzzAudio(0.0); // Ronzio base quando fluttua fermo
+            }
+
+            // Mantiene l'altezza minima sopra la superficie del terreno
+            const groundLimitY = getTerrainHeight(camera.position.x, camera.position.z) + 0.9;
+            if (camera.position.y < groundLimitY) {
+                camera.position.y = groundLimitY;
+            }
+            
+            // Tetto limite per non perdersi nel cielo
+            const maxAltitude = 65;
+            if (camera.position.y > maxAltitude) {
+                camera.position.y = maxAltitude;
+            }
+
+            // Confini di barriera dell'arena
+            camera.position.x = THREE.MathUtils.clamp(camera.position.x, -arenaSize, arenaSize);
+            camera.position.z = THREE.MathUtils.clamp(camera.position.z, -arenaSize, arenaSize);
+        }
+
+        // --- GAME LOOP ---
+        const clock = new THREE.Clock();
+
+        function gameLoop() {
+            if (!gameActive) return;
+
+            requestAnimationFrame(gameLoop);
+
+            const delta = clock.getDelta();
+
+            updateFlight(delta);
+            updateEnemies(delta);
+            updateProjectiles(delta);
+            updateParticles(delta);
+            updateRadar();
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- CONTROLLO FLUSSI DI AVVIO/STOP ---
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.add('hidden');
+
+            initAudio();
+            score = 0;
+            timeLeft = 60;
+            document.getElementById('score-display').innerText = '0000';
+            document.getElementById('time-display').innerText = '60s';
+
+            camera.position.set(0, 10, 0);
+            cameraRotation.yaw = 0;
+            cameraRotation.pitch = 0;
+
+            // Pulizia di vecchi proiettili o particelle
+            projectiles.forEach(p => scene.remove(p));
+            projectiles.length = 0;
+            particles.forEach(p => scene.remove(p));
+            particles.length = 0;
+
+            gameActive = true;
+            clock.getDelta();
+            
+            gameLoop();
+
+            if (gameTimer) clearInterval(gameTimer);
+            gameTimer = setInterval(() => {
+                timeLeft--;
+                document.getElementById('time-display').innerText = timeLeft + 's';
+                
+                if (timeLeft <= 10) {
+                    document.getElementById('time-display').classList.add('animate-ping');
+                } else {
+                    document.getElementById('time-display').classList.remove('animate-ping');
+                }
+
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function endGame() {
+            gameActive = false;
+            clearInterval(gameTimer);
+            document.exitPointerLock();
+
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('gameover-screen').classList.remove('hidden');
+
+            // Spegne il ronzio
+            if (buzzGain) {
+                buzzGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.15);
+            }
+        }
+
+        // Bottone di start e riavvio
+        document.getElementById('btn-start').addEventListener('click', startGame);
+        document.getElementById('btn-restart').addEventListener('click', startGame);
+
+        // Pre-rendering preliminare all'apertura del file
+        window.onload = function() {
+            init3D();
+            renderer.render(scene, camera);
+        };
+    </script>
+</body>
+</html>
