@@ -1,5 +1,5 @@
 La Genesi:
-##L'Incidente Diplomatico del 2004
+L'Incidente Diplomatico del 2004
 È il 2004. Un ignaro operatore del servizio clienti Telecom (o TIM) risponde a una chiamata di routine. All'altro capo del filo c'è un utente anziano, visibilmente agitato e confuso, con una richiesta surreale, categorica e non negoziabile: deve parlare urgentemente con la Mosca e con il Libano.
 
 L'operatore prova a spiegare che la Mosca è un insetto (o la capitale russa) e il Libano è uno Stato, ma l'utente non sente ragioni. Tra incomprensioni surregionali, urla, minacce e momenti di puro surrealismo, nasce la saga di Mosca Libano. Per vent'anni l'audio circola nei meandri di internet, diventando un manufatto di culto dell'Internet Retrò Italiano.
